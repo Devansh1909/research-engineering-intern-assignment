@@ -1,20 +1,9 @@
----
-title: NarrativeScope
-emoji: 🕵️
-colorFrom: blue
-colorTo: indigo
-sdk: streamlit
-sdk_version: 1.32.0
-app_file: app.py
-pinned: false
----
-
 # NarrativeScope — Digital Narrative Investigation Platform
 
 **Author:** Devansh  
 **Assignment:** SimPPL Research Engineering Intern  
 **Platform:** [🔗 Live Demo](https://huggingface.co/spaces/devansh/narrativescope)  
-**Video Walkthrough:** [🎬 Watch on YouTube](https://youtube.com/watch?v=YOUR_VIDEO_ID)  
+**Video Walkthrough:** 
 
 > NarrativeScope is a dashboard I built to investigate how digital narratives spread across online communities. It focuses on finding meaning, mapping coordination, and tracking influence instead of just matching exact keywords.
 
