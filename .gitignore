@@ -1,0 +1,36 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# API Keys
+.env
+*.key
+
+# Large data files (download separately)
+data/*.jsonl
+data/*.json
+data/*.csv
+!data/README.md
+
+# Embeddings cache (regenerated on startup)
+*.npy
+*.faiss
+
+# Streamlit cache
+.streamlit/cache/
