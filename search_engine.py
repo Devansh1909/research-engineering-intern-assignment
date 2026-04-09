@@ -116,7 +116,7 @@ def validate_query(query: str) -> tuple:
 
 def semantic_search(query: str, model, index: faiss.Index, 
                      df: pd.DataFrame, embeddings: np.ndarray,
-                     top_k: int = 20) -> tuple:
+                     top_k: int = 300) -> tuple:
     """
     Perform semantic search and return ranked results.
     
