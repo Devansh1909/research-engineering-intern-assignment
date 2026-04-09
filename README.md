@@ -2,8 +2,7 @@
 
 **Author:** Devansh  
 **Assignment:** SimPPL Research Engineering Intern  
-**Platform:** [🔗 Live Demo](https://huggingface.co/spaces/devansh/narrativescope)  
-**Video Walkthrough:** 
+**Platform:** [🔗 Live Demo](https://huggingface.co/spaces/devanshh1909/NarrativeScope)  
 
 > NarrativeScope is a dashboard I built to investigate how digital narratives spread across online communities. It focuses on finding meaning, mapping coordination, and tracking influence instead of just matching exact keywords.
 
