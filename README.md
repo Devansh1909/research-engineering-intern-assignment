@@ -1,3 +1,13 @@
+---
+title: NarrativeScope
+emoji: 🔍
+colorFrom: indigo
+colorTo: green
+sdk: docker
+app_file: app.py
+pinned: false
+---
+
 # NarrativeScope — Digital Narrative Investigation Platform
 
 **Author:** Devansh  
