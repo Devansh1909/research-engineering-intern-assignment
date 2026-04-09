@@ -1,5 +1,5 @@
-# Use Python 3.10 slim image (matches dev environment)
-FROM python:3.10-slim
+# Use full Python 3.10 image to ensure C-compilers and headers are available
+FROM python:3.10
 
 # Set the working directory inside the container
 WORKDIR /app
@@ -8,6 +8,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     build-essential \
     software-properties-common \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements.txt first to leverage Docker cache
