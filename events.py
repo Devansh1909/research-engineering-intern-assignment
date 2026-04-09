@@ -5,10 +5,22 @@ Uses the Wikipedia API to fetch 3-5 background context/events related
 to the searched topic to overlay on the time-series chart.
 """
 
-import wikipediaapi
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Graceful import — app still loads if wikipedia-api has issues;
+# the feature simply becomes unavailable with a friendly message.
+try:
+    import wikipediaapi
+    WIKIPEDIA_AVAILABLE = True
+except ImportError:
+    WIKIPEDIA_AVAILABLE = False
+    logger.info("wikipedia-api not installed — event correlation will be unavailable.")
+except Exception as exc:
+    WIKIPEDIA_AVAILABLE = False
+    logger.warning("Failed to import wikipediaapi: %s", exc)
+
 
 def fetch_wikipedia_events(topic: str, max_events: int = 3) -> list:
     """
@@ -17,6 +29,9 @@ def fetch_wikipedia_events(topic: str, max_events: int = 3) -> list:
     
     Returns a list of dictionaries with 'title', 'summary', and 'url'.
     """
+    if not WIKIPEDIA_AVAILABLE:
+        return []
+
     if not topic or len(topic) < 3:
         return []
         

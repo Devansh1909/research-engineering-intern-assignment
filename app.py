@@ -545,40 +545,33 @@ st.markdown("""
 
 
 # ─── Load Data ────────────────────────────────────────────────────────────────
-# Separate caching: st.cache_data for serializable data, st.cache_resource for objects
-@st.cache_data(show_spinner="Loading dataset...")
-def load_and_embed():
-    """Load data and compute embeddings (cached across sessions)."""
-    df = load_data()
-    if df.empty:
-        return None, None
-    model = load_embedding_model()
-    embeddings = compute_embeddings(model, df['text'].tolist())
-    return df, embeddings
+# Use cache_resource for large non-serializable objects (model, embeddings)
+# to avoid pickle serialization of huge numpy arrays (cause of "Bad message format").
+
+@st.cache_resource(show_spinner="Computing embeddings (first run only)...")
+def _compute_embeddings_cached(texts: tuple):
+    """Compute embeddings. Input is a tuple for hashability."""
+    mdl = load_embedding_model()
+    return compute_embeddings(mdl, list(texts))
 
 
 # Load everything
 with st.spinner("Initializing NarrativeScope..."):
-    result = load_and_embed()
-    if result[0] is None:
+    try:
+        df = load_data()
+        if df is None or df.empty:
+            df, embeddings = None, None
+        else:
+            embeddings = _compute_embeddings_cached(tuple(df['text'].tolist()))
+    except Exception as _load_err:
+        logger.error("Data loading failed: %s", _load_err)
         df, embeddings = None, None
-    else:
-        df, embeddings = result
-    
+
     # Merge live data from session state
     if df is not None and 'live_df' in st.session_state and not st.session_state.live_df.empty:
         df = pd.concat([df, st.session_state.live_df], ignore_index=True)
-        # Drop strict duplicates (ignoring index)
         df = df.drop_duplicates(subset=['text', 'author', 'datetime'], keep='last').reset_index(drop=True)
-        
         if st.session_state.live_embeddings is not None and embeddings is not None:
-            # Note: the full recompute via drop_duplicates above means indices might shift.
-            # To be 100% physically aligned, it's safer to just let Data_loader's DuckDB and the FAISS FAISS index build on the concatenated DF directly.
-            pass
-            
-            # Since drop_duplicates alters rows, let's just recompute embeddings for the combined df if live data exists 
-            # to avoid index-mismatch with FAISS. (Or we can assume negligible duplicates and just vstack).
-            # To be robust, let's vstack ONLY if we skip drop_duplicates, but since we drop duplicates:
             embeddings = compute_embeddings(load_embedding_model(), df['text'].tolist())
 
     if df is not None and not df.empty:
@@ -838,65 +831,71 @@ with col_examples:
     for ex in ZERO_OVERLAP_EXAMPLES[:3]:
         st.button(f"🔗 {ex['query'][:35]}...", key=f"ex_{ex['query'][:10]}", on_click=update_search, args=(ex['query'],))
 
+# Ensure analysis_df always has a value for downstream sections
+analysis_df = filtered_df
+
 # Process search
-if search_query is not None:
-    if not search_query.strip():
-        st.info("💡 Enter a query above to semantically search the dataset, or explore the full narrative timeline below.")
-        analysis_df = filtered_df
-    else:
-        results, query_info = semantic_search(search_query, model, index, df, embeddings)
-        
-        # Handle edge cases
-        if query_info['status'] == 'empty':
-            st.markdown(f'<div class="edge-case-banner">⚠️ {query_info["message"]}</div>', unsafe_allow_html=True)
-        elif query_info['status'] == 'short':
-            st.markdown(f'<div class="edge-case-banner">⚠️ {query_info["message"]}</div>', unsafe_allow_html=True)
-        elif query_info['status'] == 'non_english':
-            st.markdown(f'<div class="info-banner">🌐 {query_info["message"]}</div>', unsafe_allow_html=True)
-        elif query_info['status'] == 'no_results':
-            st.markdown(f'<div class="edge-case-banner">🔍 {query_info["message"]}</div>', unsafe_allow_html=True)
-        
-        if not results.empty:
-            st.markdown(f"**{query_info['num_results']} results** found in {query_info['search_time_ms']}ms (avg similarity: {query_info.get('avg_similarity', 'N/A')})")
-            
-            # GenAI summary of results
-            summary = summarize_search_results(results, search_query)
-            st.markdown(f'<div class="genai-summary">{summary}</div>', unsafe_allow_html=True)
-            
-            # Display results
-            for _, row in results.head(10).iterrows():
-                sim_score = row.get('similarity_score', 0)
-                text_preview = row['text'][:300] + '...' if len(row['text']) > 300 else row['text']
-                
-                st.markdown(f"""
-                <div class="search-result">
-                    <span class="similarity-badge">Similarity: {sim_score:.3f}</span>
-                    &nbsp; <b>r/{row.get('subreddit', 'unknown')}</b> by <i>u/{row.get('author', 'unknown')}</i>
-                    &nbsp; | &nbsp; Score: {row.get('score', 0)} &nbsp; | &nbsp; {row.get('datetime', 'N/A')}
-                    <p style="color: #B0B8C8; margin-top: 0.5rem; font-size: 0.9rem;">{text_preview}</p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            # Follow-up query suggestions
-            if 'suggested_queries' in query_info and query_info['suggested_queries']:
-                st.markdown("**Explore further:**")
-                cols = st.columns(len(query_info['suggested_queries']))
-                for idx, sq in enumerate(query_info['suggested_queries']):
-                    with cols[idx]:
-                        st.button(f"🔗 {sq}", key=f"sq_{idx}", use_container_width=True, on_click=update_search, args=(sq,))
-        
-        # Update filtered_df to search results for downstream analysis
-        if not results.empty:
-            analysis_df = results
+try:
+    if search_query is not None:
+        if not search_query.strip():
+            st.info("💡 Enter a query above to semantically search the dataset, or explore the full narrative timeline below.")
         else:
-            analysis_df = filtered_df
-    
+            results, query_info = semantic_search(search_query, model, index, df, embeddings)
+            
+            # Handle edge cases
+            if query_info['status'] == 'empty':
+                st.markdown(f'<div class="edge-case-banner">⚠️ {query_info["message"]}</div>', unsafe_allow_html=True)
+            elif query_info['status'] == 'short':
+                st.markdown(f'<div class="edge-case-banner">⚠️ {query_info["message"]}</div>', unsafe_allow_html=True)
+            elif query_info['status'] == 'non_english':
+                st.markdown(f'<div class="info-banner">🌐 {query_info["message"]}</div>', unsafe_allow_html=True)
+            elif query_info['status'] == 'no_results':
+                st.markdown(f'<div class="edge-case-banner">🔍 {query_info["message"]}</div>', unsafe_allow_html=True)
+            
+            if not results.empty:
+                st.markdown(f"**{query_info['num_results']} results** found in {query_info['search_time_ms']}ms (avg similarity: {query_info.get('avg_similarity', 'N/A')})")
+                
+                # GenAI summary of results
+                summary = summarize_search_results(results, search_query)
+                st.markdown(f'<div class="genai-summary">{summary}</div>', unsafe_allow_html=True)
+                
+                # Display results
+                for _, row in results.head(10).iterrows():
+                    sim_score = row.get('similarity_score', 0)
+                    text_preview = row['text'][:300] + '...' if len(row['text']) > 300 else row['text']
+                    
+                    st.markdown(f"""
+                    <div class="search-result">
+                        <span class="similarity-badge">Similarity: {sim_score:.3f}</span>
+                        &nbsp; <b>r/{row.get('subreddit', 'unknown')}</b> by <i>u/{row.get('author', 'unknown')}</i>
+                        &nbsp; | &nbsp; Score: {row.get('score', 0)} &nbsp; | &nbsp; {row.get('datetime', 'N/A')}
+                        <p style="color: #B0B8C8; margin-top: 0.5rem; font-size: 0.9rem;">{text_preview}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # Follow-up query suggestions
+                if 'suggested_queries' in query_info and query_info['suggested_queries']:
+                    st.markdown("**Explore further:**")
+                    cols = st.columns(len(query_info['suggested_queries']))
+                    for idx, sq in enumerate(query_info['suggested_queries']):
+                        with cols[idx]:
+                            st.button(f"🔗 {sq}", key=f"sq_{idx}", use_container_width=True, on_click=update_search, args=(sq,))
+            
+            # Update analysis_df to search results for downstream analysis
+            if not results.empty:
+                analysis_df = results
+except Exception as _search_err:
+    logger.error("Search section error: %s", _search_err)
+    st.warning(f"⚠️ Search encountered an error: {_search_err}")
 
 
 # ── Narrative Health Score card (appears after search results) ────────────────
-if search_query and not analysis_df.empty:
-    hs = compute_health_score(analysis_df)
-    render_health_score(hs, search_query)
+try:
+    if search_query and not analysis_df.empty:
+        hs = compute_health_score(analysis_df)
+        render_health_score(hs, search_query)
+except Exception as _hs_err:
+    logger.error("Health score error: %s", _hs_err)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -920,7 +919,8 @@ The teal line is a <em>7-day moving average</em> — it smooths out day-to-day n
 jumped from one community to another (a classic amplification pattern).
 """)
 
-if not analysis_df.empty and 'datetime' in analysis_df.columns:
+try:
+  if not analysis_df.empty and 'datetime' in analysis_df.columns:
     # Daily post counts
     daily_counts = analysis_df.groupby(analysis_df['datetime'].dt.date).agg(
         post_count=('text', 'count'),
@@ -1025,8 +1025,11 @@ if not analysis_df.empty and 'datetime' in analysis_df.columns:
             legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
         )
         st.plotly_chart(fig_sub, use_container_width=True)
-else:
+  else:
     st.info("No temporal data available for the current selection.")
+except Exception as _ts_err:
+    logger.error("Time-series section error: %s", _ts_err)
+    st.warning(f"⚠️ Time-series analysis encountered an error: {_ts_err}")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1057,7 +1060,8 @@ labels = None
 analysis_df_reset = pd.DataFrame()
 cluster_labels_dict = {}
 
-if not analysis_df.empty:
+try:
+  if not analysis_df.empty:
     with st.spinner("Clustering topics..."):
         # Get embeddings for analysis subset
         analysis_indices = analysis_df.index.tolist()
@@ -1134,8 +1138,11 @@ if not analysis_df.empty:
                 )
         else:
             st.warning("Embedding data not available for clustering.")
-else:
+  else:
     st.info("No data available for clustering with the current filters.")
+except Exception as _clust_err:
+    logger.error("Clustering section error: %s", _clust_err)
+    st.warning(f"⚠️ Topic clustering encountered an error: {_clust_err}")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1163,7 +1170,8 @@ between them. The more subreddits they share, the thicker the line. The result i
 that account was a critical amplifier.
 """)
 
-if not analysis_df.empty and 'author' in analysis_df.columns:
+try:
+  if not analysis_df.empty and 'author' in analysis_df.columns:
     with st.spinner("Building network graph..."):
         G = build_cooccurrence_network(analysis_df, groupby_col='subreddit', node_col='author')
         
@@ -1247,8 +1255,11 @@ if not analysis_df.empty and 'author' in analysis_df.columns:
                         st.error(removal_results['error'])
         else:
             st.info("Not enough connected accounts to build a meaningful network. Try broadening your filters.")
-else:
+  else:
     st.info("No author data available for network analysis.")
+except Exception as _net_err:
+    logger.error("Network section error: %s", _net_err)
+    st.warning(f"⚠️ Network analysis encountered an error: {_net_err}")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1275,7 +1286,8 @@ help_card("How does the anomaly detector work?", """
 across many subreddits. Always investigate further before drawing conclusions.
 """)
 
-if not analysis_df.empty:
+try:
+  if not analysis_df.empty:
     anomaly_flags = detect_anomalies(analysis_df)
     if anomaly_flags:
         st.markdown(f"**{len(anomaly_flags)} potential anomalies detected**")
@@ -1294,8 +1306,11 @@ if not analysis_df.empty:
         <div class="info-banner">✅ No obvious coordination signals detected in the current data.
         This doesn't rule out sophisticated activity — it means the three automated checks came back clean.</div>
         """, unsafe_allow_html=True)
-else:
+  else:
     st.info("No data available for anomaly detection.")
+except Exception as _anom_err:
+    logger.error("Anomaly section error: %s", _anom_err)
+    st.warning(f"⚠️ Anomaly detection encountered an error: {_anom_err}")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1314,7 +1329,8 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-if not analysis_df.empty and labels is not None and len(labels) > 0:
+try:
+  if not analysis_df.empty and labels is not None and len(labels) > 0:
     # Let user select a cluster to investigate
     valid_clusters = sorted([c for c in set(labels) if c != -1])
     
@@ -1389,6 +1405,9 @@ if not analysis_df.empty and labels is not None and len(labels) > 0:
                 avg_score=('score', 'mean')
             ).sort_values('posts', ascending=False).head(10)
             st.dataframe(top_voices, use_container_width=True)
+except Exception as _thread_err:
+    logger.error("Thread puller error: %s", _thread_err)
+    st.warning(f"⚠️ Thread Puller encountered an error: {_thread_err}")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
