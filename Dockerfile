@@ -7,7 +7,6 @@ WORKDIR /app
 # Install system dependencies (useful for python packages like networkx, etc.)
 RUN apt-get update && apt-get install -y \
     build-essential \
-    software-properties-common \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
