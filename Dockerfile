@@ -1,10 +1,10 @@
-# Use Python 3.9 slim image
-FROM python:3.9-slim
+# Use Python 3.10 slim image (matches dev environment)
+FROM python:3.10-slim
 
 # Set the working directory inside the container
 WORKDIR /app
 
-# Install system dependencies (useful for some python packages like networkx, etc.)
+# Install system dependencies (useful for python packages like networkx, etc.)
 RUN apt-get update && apt-get install -y \
     build-essential \
     software-properties-common \
@@ -12,6 +12,9 @@ RUN apt-get update && apt-get install -y \
 
 # Copy requirements.txt first to leverage Docker cache
 COPY requirements.txt .
+
+# Upgrade pip and install build dependencies before requirements
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel Cython
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
