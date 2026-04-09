@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 
 # Upgrade pip and install build dependencies before requirements
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel Cython
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel Cython numpy
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
